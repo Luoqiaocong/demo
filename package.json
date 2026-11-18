@@ -1,19 +1,37 @@
 {
   "name": "demo",
-  "version": "1.0.0",
-  "description": "用来作自主的Git练习",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "version": "0.1.0",
+  "description": "文本小工具：slugify / wordCount / truncate",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js"
+    }
   },
+  "files": [
+    "lib"
+  ],
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "npm run build && node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "text",
+    "slugify",
+    "utility"
+  ],
+  "author": "luoqiaocong",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Luoqiaocong/demo.git"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "bugs": {
     "url": "https://github.com/Luoqiaocong/demo/issues"
   },

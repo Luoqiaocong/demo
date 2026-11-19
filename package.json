@@ -1,5 +1,5 @@
 {
-  "name": "demo",
+  "name": "@luoqiaocong/demo",
   "version": "0.1.0",
   "description": "文本小工具：slugify / wordCount / truncate",
   "type": "module",

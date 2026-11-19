@@ -5,13 +5,13 @@
 ## 安装
 
 ```bash
-npm install @luoqiaocong/demo
+npm install @hiseven/demo
 ```
 
 ## 用法
 
 ```js
-import { slugify, wordCount, truncate } from "@luoqiaocong/demo";
+import { slugify, wordCount, truncate } from "@hiseven/demo";
 
 slugify("Hello World");          // "hello-world"
 slugify("  前端/工程 笔记  ");    // "前端工程-笔记"

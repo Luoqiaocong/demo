@@ -15,7 +15,8 @@
 | 学怎么把项目配成 npm 包、怎么构建测试 | 2 → 3 → 4 |
 | 学打包、验证"别人装得上" | 5 |
 | 学分支和合并冲突 | 6 |
-| 准备发版 | 7 → 8 |
+| 撤销改动、撤销提交、找回丢掉的提交 | 7 |
+| 准备发版 | 8 → 9 |
 
 每一节都是"一句话说明 + 命令 + 会看到什么"。**命令要自己敲一遍**，光看没用；敲完对不上输出时，先看那一节末尾有没有提到对应的坑。
 
@@ -430,11 +431,92 @@ git branch -D practice/conflict-a
 
 ---
 
-## 7. 版本号与 Git 标签
+## 7. 撤销与回退
+
+这一节练"改坏了怎么办"。得先分两种情况：改动还没提交，还是已经提交了。两者用的工具完全不同，混着用会出事。
+
+### 7.1 没提交的改动：git restore
+
+改到一半发现方向错了，想回到上次提交的样子：
+
+```bash
+git restore notes/undo-drill.md
+git diff
+```
+
+第一句把工作区里这个文件的修改丢掉，第二句验证，应该什么都看不到。注意这是**真丢**，Git 从没记录过这些内容，回收站里也没有。
+
+如果只是 `git add` 了想反悔，但内容还想留着：
+
+```bash
+git add notes/undo-drill.md
+git restore --staged notes/undo-drill.md
+git status -sb
+```
+
+`--staged` 只把文件从暂存区拿出来，退回"已修改未暂存"，文件内容一个字没动。记一句话就够：**不带 `--staged` 丢内容，带 `--staged` 只丢位置。**
+
+### 7.2 已提交的：reset 三个开关
+
+提交已经生成、想撤掉，用 `git reset`。它的动作是"把分支指针往回挪"，区别在于改动往哪退：
+
+```bash
+git reset --soft HEAD~1    # 提交没了，改动回到暂存区
+git reset --mixed HEAD~1   # 提交没了，改动回到工作区（默认）
+git reset --hard HEAD~1    # 提交没了，改动也一起没了
+```
+
+三档一层比一层狠：`--soft` 只挪指针；`--mixed` 顺手把暂存区也清空；`--hard` 连工作区一起重置。
+
+`status` 的表现也跟着变：`--soft` 之后是 `M `（已暂存），`--mixed` 之后是 ` M`（未暂存），`--hard` 之后完全干净。
+
+实际怎么选：提交信息写错、想把改动重新组织一遍，用 `--soft`；这次提交干脆不要了，用 `--hard`。**`--hard` 是唯一会真丢东西的开关**，敲之前先 `git status` 看看有没有还没提交的活儿。
+
+`HEAD~1` 是往回退一格，`~2` 就是退两格。
+
+### 7.3 撤错了：git reflog
+
+`--hard` 之后才发现退错了，别慌，Git 还记着：
+
+```bash
+git reflog -6
+git reset --hard HEAD@{1}
+```
+
+`reflog` 记的不是提交，而是 **HEAD 自己挪动过的每一步**。`HEAD@{0}` 是当前，`HEAD@{1}` 是上一次挪动之前的位置，所以退回去就是回到 `HEAD@{1}`。
+
+被 `--hard` 扔掉的提交、被删掉的分支，都能这样找回来，默认保留 90 天。
+
+还有个工程上的事实：**reflog 只存在本地**，不会跟着 push 走，所以"能找回"这件事只在你自己的机器上成立。
+
+### 7.4 踩到的坑：reset 只做了一半
+
+练习时撞到过一次报错：
+
+```
+error: update_ref failed for ref 'HEAD': cannot lock ref 'HEAD':
+Unable to create '.../refs/heads/practice/undo.lock': Permission denied
+```
+
+紧接着 `git status` 显示 `MM notes/undo-drill.md`，看着很懵。
+
+原因是 `reset` 分两步走：先改索引，再挪分支指针。第二步因为权限不足失败，第一步已经生效，于是暂存区和工作区都偏离了当前提交，就成了 `MM`——**左 M 表示暂存区有改动，右 M 表示工作区又有改动**。
+
+权限问题本身来自 `.git` 里有 34 个文件属主变成了 root，也就是两个身份轮流操作了同一个仓库。`chown -R admin:admin` 统一属主之后，重跑命令就正常了。
+
+教训是：看到 `MM` 这种异常组合，先想想是不是某条命令只跑了一半。
+
+### 7.5 已推送的提交别用 reset
+
+`reset` 会改写历史。如果这个提交已经推给别人了，你一 reset 再强推，别人的历史就跟你对不上。那种情况用 `git revert`——它不删提交，而是生成一个"把改动反向抵消"的新提交，历史只增不改。这条还没练，等做到发布那一步再说。
+
+---
+
+## 8. 版本号与 Git 标签
 
 > 这一章和下一章是紧接着要执行的流程，**还没在本机跑完**。命令和判断依据都按 npm 官方行为写的，实际跑的时候如果撞到新坑，回来改。
 
-### 7.1 版本号该怎么涨
+### 8.1 版本号该怎么涨
 
 版本号是 `主.次.修订` 三段，对应 `major.minor.patch`：
 
@@ -447,7 +529,7 @@ git branch -D practice/conflict-a
 
 一条硬规矩：**发布过的版本号不能复用**，哪怕你把包删了，那个号也回不来，只能往上加。
 
-### 7.2 用 npm version 改版本号
+### 8.2 用 npm version 改版本号
 
 ```bash
 npm version patch
@@ -464,7 +546,7 @@ npm pkg get version
 
 `--no-git-tag-version` 拆开看就是"不要 commit、不要 tag"。手动发版一般用这个，因为你想自己控制提交消息和标签落在哪。
 
-### 7.3 打 Git 标签
+### 8.3 打 Git 标签
 
 标签是给某个提交贴的固定外号，它不改代码、不产生新提交：
 
@@ -476,7 +558,7 @@ git show v0.1.1
 
 `-a` 创建附注标签（带作者、时间、说明），`-m` 是说明文字；不加 `-a` 的轻量标签只是个名字书签，发版推荐用附注的。`git tag -n` 列出标签和说明，`git show` 能看到它具体指向哪个提交。
 
-### 7.4 推送标签
+### 8.4 推送标签
 
 ```bash
 git push origin v0.1.1
@@ -485,7 +567,7 @@ git push --tags
 
 **标签不会跟着 `git push` 自动上传**，必须单独推。单推一个用第一种，一次推全部用 `--tags`。这条也是 CI 自动发版的触发器，后面配了 workflow 就靠推标签来发版。
 
-### 7.5 标签和版本号的关系
+### 8.5 标签和版本号的关系
 
 | 东西 | 管什么 |
 | --- | --- |
@@ -496,11 +578,11 @@ git push --tags
 
 ---
 
-## 8. 发布到 npm
+## 9. 发布到 npm
 
 > 同样属于还没实操的部分。发布是不可逆的（版本号不能复用），所以下面每一步都先确认再执行。
 
-### 8.1 发布前自查
+### 9.1 发布前自查
 
 ```bash
 npm run build && npm test
@@ -513,7 +595,7 @@ npm view demo version
 
 名字还没定死，正式发布前记得把 `package.json` 的 `name` 改成没人用的，用 `npm view <名字>` 验证。
 
-### 8.2 切到官方源并登录
+### 9.2 切到官方源并登录
 
 装包用镜像没事，**发包必须走官方源**，否则会得到 `401` 或 `404`：
 
@@ -530,7 +612,7 @@ npm whoami --registry=https://registry.npmjs.org/
 "publishConfig": { "registry": "https://registry.npmjs.org/", "access": "public" }
 ```
 
-### 8.3 先演练一次
+### 9.3 先演练一次
 
 ```bash
 npm publish --dry-run
@@ -540,7 +622,7 @@ npm publish --dry-run
 
 还有一个坑得提前知道：`package.json` 里的 `"private": true` 会让发布直接失败，**发之前必须删掉**（`npm pkg delete private`）。这是当初防止误发布上的保险，现在得自己拆。
 
-### 8.4 正式发布
+### 9.4 正式发布
 
 ```bash
 npm publish --access public
@@ -548,7 +630,7 @@ npm publish --access public
 
 `--access public` 是给带 scope 的包用的（`@用户名/包名` 默认是私有的，不加这个别人装不到）；不带 scope 的普通包名可以省略。账号开了双因子的还要加 `--otp=123456`。
 
-### 8.5 发布后核对
+### 9.5 发布后核对
 
 ```bash
 npm view demo version
@@ -558,7 +640,7 @@ npm view demo dist.tarball
 
 第一条看最新版本是不是你刚发的，第二条看 `latest` 指向哪个版本，第三条是实际下载地址。想更彻底，去一个空目录 `npm install demo` 装一遍跑跑看——这跟当初用 tarball 验证是同一个思路。
 
-### 8.6 发错了怎么办
+### 9.6 发错了怎么办
 
 | 情况 | 做法 |
 | --- | --- |
@@ -570,14 +652,13 @@ npm view demo dist.tarball
 
 ---
 
-## 9. 后续待办
+## 10. 后续待办
 
-1. 推送积压提交：`git push`（当前领先远程 1 个提交）。
-2. 撤销三件套：`git restore` 丢改动、`git reset --soft/--mixed/--hard` 退提交、`git revert` 安全撤销已推送的提交。
-3. `git stash` 临时收起改动，`git reflog` 找回丢失的提交。
-4. 按第 7、8 章把版本、标签、发布真正跑一遍。
-5. 第二账号协作：fork → 推分支 → 提 PR → review → 合并。
-6. 进阶：GitHub Actions + Trusted Publishing，推标签自动发版，不用存 token。
+1. 按第 8、9 章把版本、标签、发布真正跑一遍。
+2. `git revert` 撤销已推送的提交。
+3. `git stash` 临时收起改动去干别的。
+4. 第二账号协作：fork → 推分支 → 提 PR → review → 合并。
+5. 进阶：GitHub Actions + Trusted Publishing，推标签自动发版，不用存 token。
 
 ---
 
@@ -616,6 +697,15 @@ git switch -c feature/xxx
 git switch main
 git merge feature/xxx
 git branch -d feature/xxx
+
+# 撤销
+git restore <文件>              # 丢掉未提交的改动
+git restore --staged <文件>      # 只取消暂存，内容保留
+git reset --soft HEAD~1         # 退提交，改动留在暂存区
+git reset --mixed HEAD~1        # 退提交，改动留在工作区（默认）
+git reset --hard HEAD~1         # 退提交，改动一起清掉
+git reflog                      # 撤错了来这里找
+git reset --hard HEAD@{1}       # 回到上一次挪动之前
 
 # 远程
 git push -u origin feature/xxx

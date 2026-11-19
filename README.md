@@ -31,6 +31,8 @@ truncate("abc", 4);              // "abc"
 | `wordCount(input)` | 计词：英文按单词、汉字按字 |
 | `truncate(input, maxLength, ellipsis?)` | 按显示长度截断，省略号计入总长度 |
 
+> 说明：这是通过 fork 提交 PR 的示例改动。
+
 ## 开发
 
 ```bash

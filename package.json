@@ -1,0 +1,43 @@
+{
+  "name": "demo",
+  "version": "0.1.0",
+  "description": "文本小工具：slugify / wordCount / truncate",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js"
+    }
+  },
+  "files": [
+    "lib"
+  ],
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "npm run build && node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "text",
+    "slugify",
+    "utility"
+  ],
+  "author": "luoqiaocong",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Luoqiaocong/demo.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Luoqiaocong/demo/issues"
+  },
+  "homepage": "https://github.com/Luoqiaocong/demo#readme",
+  "private": true,
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

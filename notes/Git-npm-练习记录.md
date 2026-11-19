@@ -514,7 +514,7 @@ Unable to create '.../refs/heads/practice/undo.lock': Permission denied
 
 ## 8. 版本号与 Git 标签
 
-> 这一章和下一章是紧接着要执行的流程，**还没在本机跑完**。命令和判断依据都按 npm 官方行为写的，实际跑的时候如果撞到新坑，回来改。
+> 这一章和下一章都已经真正跑过一遍，下面写的是当时实际执行的命令和撞到的坑。
 
 ### 8.1 版本号该怎么涨
 
@@ -567,6 +567,15 @@ git push --tags
 
 **标签不会跟着 `git push` 自动上传**，必须单独推。单推一个用第一种，一次推全部用 `--tags`。这条也是 CI 自动发版的触发器，后面配了 workflow 就靠推标签来发版。
 
+打错位置、或者打完才发现还有改动没提交，只要**这个标签还没正式发布过**，可以强行挪：
+
+```bash
+git tag -f -a v0.1.1 -m "0.1.1：修正 truncate 长度计算"
+git push -f origin v0.1.1
+```
+
+`-f` 强制把标签指向当前提交。但一旦包已经发到 npm，就绝对不要再动它——别人手里的引用会分裂，你的 tag 说 0.1.1，实际下载到的可能是另一份代码。
+
 ### 8.5 标签和版本号的关系
 
 | 东西 | 管什么 |
@@ -580,65 +589,96 @@ git push --tags
 
 ## 9. 发布到 npm
 
-> 同样属于还没实操的部分。发布是不可逆的（版本号不能复用），所以下面每一步都先确认再执行。
+> 发布是不可逆的（版本号不能复用），每一步都先确认再执行。下面这些是实际跑通的顺序。
 
 ### 9.1 发布前自查
 
 ```bash
 npm run build && npm test
 npm pack --dry-run
-npm whoami
-npm view demo version
+npm whoami --registry=https://registry.npmjs.org/
+npm view @hiseven/demo version --registry=https://registry.npmjs.org/
 ```
 
-四条分别确认：代码能构建能测、包里内容干净、当前登录的是谁、这个包名有没有被占用。`npm view` 返回 `E404` 说明名字可用；返回版本号说明已被占用，得换名。
+四条分别确认：代码能构建能测、包里内容干净、当前登录的是谁、这个名字有没有被占用。`npm view` 返回 404 说明名字可用，返回版本号说明已被占用。
 
-名字还没定死，正式发布前记得把 `package.json` 的 `name` 改成没人用的，用 `npm view <名字>` 验证。
+当时 `demo` 这个裸名字已经被别人占了（线上有个 0.1.10），所以改成带 scope 的形式。**scope 必须是你 npm 账号的名字**，这里就差点栽跟头：GitHub 用户名是 `luoqiaocong`，但 `npm whoami` 回显的是 `hiseven`，两者不是一回事。`@luoqiaocong/xxx` 用 `hiseven` 是发不出去的，最后名字定成 `@hiseven/demo`。
 
-### 9.2 切到官方源并登录
+### 9.2 登录 npm
 
-装包用镜像没事，**发包必须走官方源**，否则会得到 `401` 或 `404`：
+装包用镜像没事，**发包必须走官方源**，否则会得到 401 或 404：
 
 ```bash
 npm login --registry=https://registry.npmjs.org/
 npm whoami --registry=https://registry.npmjs.org/
 ```
 
-`npm login` 会交互问用户名、密码、邮箱，账号开了双因子还要一次性验证码。`whoami` 是确认身份，回显用户名就对了。
+这里连着踩了三个坑：
 
-不想每次敲 `--registry`，可以只在发包时指定，或者在 `package.json` 里固定：
-
-```json
-"publishConfig": { "registry": "https://registry.npmjs.org/", "access": "public" }
-```
-
-### 9.3 先演练一次
+**一是它默认想开浏览器。** npm 9 之后登录默认走网页授权，在无图形界面的服务器上会报 `xdg-open: no method available`。把登录方式改成终端问答：
 
 ```bash
-npm publish --dry-run
+npm config set auth-type legacy
 ```
 
-`--dry-run` 只打印会发什么、不真的发。清单应该和 `npm pack --dry-run` 一致。
+**二是改成终端后又要一次性验证码。** npm 对登录、发布这类敏感操作统一要求 OTP，跟你的账号有没有开双因子无关。
 
-还有一个坑得提前知道：`package.json` 里的 `"private": true` 会让发布直接失败，**发之前必须删掉**（`npm pkg delete private`）。这是当初防止误发布上的保险，现在得自己拆。
+**三是 2FA 页面只给 Security key，没有验证器 App 选项。** 不一定要买硬件密钥——Windows 的 PIN、指纹就是"平台认证器"，浏览器会直接调 Windows Hello。配好之后 CLI 登录改用网页方式：
+
+```bash
+npm login --auth-type=web --registry=https://registry.npmjs.org/
+```
+
+它会打印一个 `https://www.npmjs.com/login?next=...` 链接，复制到有浏览器的机器上打开、确认，终端这边自动就登录了。
+
+`whoami` 回显用户名就对了。凭证存在 `~/.npmrc` 里，注意是**哪个用户**的 `~/.npmrc`——用 root 登录的凭证，admin 身份读不到。
+
+### 9.3 摘掉保险并演练
+
+```bash
+npm pkg delete private
+npm pkg get private
+```
+
+`private: true` 是当初防止误发布上的保险，不删掉 `npm publish` 会直接失败。`get` 之后什么都不显示，说明字段已经没了。
+
+```bash
+npm run build
+npm pack --dry-run
+```
+
+清单应该和真正要发的一致。当时的结果是 7 个文件、约 3 kB，只有 `lib/` 四个文件、`package.json`、`README.md`、`LICENSE`。
 
 ### 9.4 正式发布
 
 ```bash
-npm publish --access public
+npm publish --access public --registry=https://registry.npmjs.org/
 ```
 
-`--access public` 是给带 scope 的包用的（`@用户名/包名` 默认是私有的，不加这个别人装不到）；不带 scope 的普通包名可以省略。账号开了双因子的还要加 `--otp=123456`。
+- `--access public`：带 scope 的包默认私有，不加这个别人装不到；
+- `--registry`：强制官方源，你本机默认是镜像；
+- 中途可能再要一次 2FA 授权，按提示走 Windows Hello 或浏览器确认。
+
+成功会看到 `+ @hiseven/demo@0.1.0`，以及 `Your package is being processed and may take a few minutes to become available.`
 
 ### 9.5 发布后核对
 
 ```bash
-npm view demo version
-npm view demo dist-tags
-npm view demo dist.tarball
+npm view @hiseven/demo version --registry=https://registry.npmjs.org/
+npm view @hiseven/demo dist-tags --registry=https://registry.npmjs.org/
 ```
 
-第一条看最新版本是不是你刚发的，第二条看 `latest` 指向哪个版本，第三条是实际下载地址。想更彻底，去一个空目录 `npm install demo` 装一遍跑跑看——这跟当初用 tarball 验证是同一个思路。
+第一条看最新版本，第二条看 `latest` 指向谁——`latest` 是默认标签，别人直接 `npm i` 装到的就是它。
+
+最实在的验收是装回来跑一遍：
+
+```bash
+mkdir -p /tmp/verify && cd /tmp/verify
+npm init -y
+npm install @hiseven/demo --registry=https://registry.npmjs.org/
+```
+
+**这里的 `--registry` 不能省**：镜像站同步新包有延迟（几分钟到几小时），不加参数时会搜不到，容易误判成发布失败。
 
 ### 9.6 发错了怎么办
 
@@ -654,11 +694,10 @@ npm view demo dist.tarball
 
 ## 10. 后续待办
 
-1. 按第 8、9 章把版本、标签、发布真正跑一遍。
-2. `git revert` 撤销已推送的提交。
-3. `git stash` 临时收起改动去干别的。
-4. 第二账号协作：fork → 推分支 → 提 PR → review → 合并。
-5. 进阶：GitHub Actions + Trusted Publishing，推标签自动发版，不用存 token。
+1. `git revert` 撤销已推送的提交。
+2. `git stash` 临时收起改动去干别的。
+3. 配 GitHub Actions + Trusted Publishing，推标签自动发版。
+4. 给仓库建一个 GitHub Release，挂上 `v0.1.0`。
 
 ---
 
@@ -718,11 +757,14 @@ npm ls --depth=0 / npm outdated
 npm run <script>
 
 # npm 发版前
+npm config set auth-type legacy        # 服务器上没有浏览器时
+npm login --registry=https://registry.npmjs.org/
+npm whoami --registry=https://registry.npmjs.org/
 npm run build && npm test
 npm pack --dry-run
 npm version patch --no-git-tag-version
-npm publish --registry=https://registry.npmjs.org/
-npm view <pkg> version dist-tags
+npm publish --access public --registry=https://registry.npmjs.org/
+npm view <pkg> version dist-tags --registry=https://registry.npmjs.org/
 ```
 
 ---
@@ -740,6 +782,12 @@ npm view <pkg> version dist-tags
 
 **`npm publish` 报 404 或 401**
 多半是 registry 指到了镜像站，发包必须显式用 `--registry=https://registry.npmjs.org/`。
+
+**`npm publish` 报 403 / 说你没有权限**
+scope 和 npm 账号不一致。`npm whoami` 看真实用户名，`@用户名/包名` 里的用户名必须跟它一样。
+
+**`npm login` 弹 `xdg-open: no method available`**
+无图形界面的服务器上开不了浏览器。先 `npm config set auth-type legacy`，或者用 `--auth-type=web` 拿链接去别的机器打开。
 
 **`npm publish` 报 "cannot publish over" / `EPUBLISHCONFLICT`**
 这个版本号已经发过了。版本号不能复用，涨一位再发。

@@ -17,6 +17,11 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+      - name: 升级 npm（trusted publishing 需要较新版本）
+        run: |
+          npm install -g npm@latest
+          npm -v
+          node -v
       - run: npm ci
       - run: npm test
       - run: npm publish --provenance --access public

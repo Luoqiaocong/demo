@@ -1,6 +1,6 @@
 {
   "name": "@hiseven/demo",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "文本小工具：slugify / wordCount / truncate",
   "type": "module",
   "main": "./lib/index.js",

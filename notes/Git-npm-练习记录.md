@@ -17,6 +17,8 @@
 | 学分支和合并冲突 | 6 |
 | 撤销改动、撤销提交、找回丢掉的提交 | 7 |
 | 准备发版 | 8 → 9 |
+| 多人协作、提 PR、处理冲突 | 10 |
+| 配 CI 自动发版 | 11 |
 
 每一节都是"一句话说明 + 命令 + 会看到什么"。**命令要自己敲一遍**，光看没用；敲完对不上输出时，先看那一节末尾有没有提到对应的坑。
 
@@ -692,12 +694,182 @@ npm install @hiseven/demo --registry=https://registry.npmjs.org/
 
 ---
 
-## 10. 后续待办
+## 10. 协作：PR 到底怎么走
 
-1. `git revert` 撤销已推送的提交。
-2. `git stash` 临时收起改动去干别的。
-3. 配 GitHub Actions + Trusted Publishing，推标签自动发版。
-4. 给仓库建一个 GitHub Release，挂上 `v0.1.0`。
+前面几次合并都是本地 `git merge` 直接合。真实团队几乎都走 PR，这一章把三条路各走一遍，顺便把"被要求修改"的流程也走完。
+
+### 10.1 三种提 PR 的方式
+
+**自己账号开分支 → 网页提 PR**。最常用，单人项目也适用。分支推上去，网页上点几下就能发起，合并前能看到完整 diff。
+
+**把对方加成协作者 → 他直接推分支提 PR**。适合公司内的小团队，对方有写权限，不需要 fork。
+
+**对方 fork → 在他的副本上改 → 往上游提 PR**。开源项目的标准做法，对方没有任何权限，只靠 PR 交互。
+
+一句话区分：**fork 是给"没有写权限的人"用的**，有权限就不需要。
+
+### 10.2 走一遍自己的 PR
+
+```bash
+git switch -c docs/readme-usage
+# 改 README
+git add README.md
+git commit -m "docs: 补充安装与用法示例"
+git push -u origin docs/readme-usage
+```
+
+推完打开仓库首页，顶部会有个黄色提示条，点 **Compare & pull request**，填标题，**Create pull request**。然后在 **Files changed** 里能看到完整 diff，没问题就点 **Merge pull request** → **Confirm merge**，顺手 **Delete branch** 把远程分支删掉。
+
+回到本地要手动同步，远程的合并结果不会自己下来：
+
+```bash
+git switch main
+git pull
+git branch -d docs/readme-usage
+```
+
+这里能看清一件事：**PR 只是"请求合并"，真正的合并发生在远程**。本地 `git merge` 和网页 PR 的区别就在这里——PR 会留下讨论、评审记录、CI 结果，本地合并什么都留不下。
+
+### 10.3 故意制造一次冲突
+
+冲突是练出来的，不是看出来的。做法是让两边改**同一行**：
+
+先让协作者拉一个分支改 README 的某一句，提交但不合并。然后自己这边把**同一句**改成另一个版本，提交并推到 main。这时他的 PR 页面会变成红色：
+
+```
+This branch has conflicts that must be resolved
+```
+
+绿色合并按钮消失，资产状态是 `dirty`。**这才是真正拦住合并的东西**——注意区分：你在 review 里点 Request changes 只是表态，没有分支保护规则的话，作者照样能点合并；但冲突在，谁都合不了。
+
+### 10.4 打回去，再让对方改
+
+在 PR 的 **Files changed** 里点 **Review changes**，选 **Request changes**，写清楚原因：
+
+> 这行和 main 上的改动冲突了，麻烦先把 main 合并进来、解决冲突后再提一次
+
+提交后 PR 顶部出现 changes requested 标记。切到作者账号，PR 页面会显示 **Resolve conflicts** 按钮，点开是网页编辑器，里面是熟悉的标记：
+
+```
+<<<<<<< docs/intro-qc
+他改的版本
+=======
+main 上的版本
+>>>>>>> main
+```
+
+改成最终要的那句，删掉三组标记，点 **Mark as resolved**，再 **Commit merge**。PR 自动更新，冲突消失。
+
+最后回主账号点 **Approve** → **Merge** 收尾。整个"提 → 被打回 → 修 → 通过"的闭环才算走完。
+
+### 10.5 fork 多出来的成本
+
+fork 方式能跑通同一套流程，但每次合并之后，对方的仓库会落后于上游，页面提示 **This branch is 1 commit behind**，要手动点 **Sync fork** → **Update branch**。
+
+不同步的后果是：下次再提 PR 时，冲突里会有一大堆"本来就该有"的差异，看起来像是他改的，实际只是他分支旧了。这就是很多人嫌 fork 麻烦的原因。
+
+---
+
+## 11. CI 自动发布
+
+### 11.1 为什么不用存 token
+
+传统做法是在仓库设置里放一个 `NPM_TOKEN`，workflow 里读出来用。问题是这个 token 长期有效、权限很大，一旦泄漏就能发恶意包。
+
+Trusted Publishing 走 OIDC，流程是：
+
+```
+1. workflow 跑到 publish 那步，向 GitHub 申请身份令牌
+   （里面写着：我是 Luoqiaocong/demo，由 publish.yml 触发）
+2. npm 收到令牌，跟后台配置比对：仓库？文件名？权限？
+3. 对上了发一个几分钟就过期的发布令牌
+4. publish 用完即作废
+```
+
+所以**仓库里一个密钥都不用存**，每次都是现换的临时凭证。
+
+### 11.2 publish.yml 的每一段
+
+```yaml
+name: publish
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: 升级 npm（trusted publishing 需要较新版本）
+        run: |
+          npm install -g npm@latest
+          npm -v
+      - run: npm ci
+      - run: npm test
+      - run: npm publish --provenance --access public
+```
+
+`on` 两个触发条件：推 `v` 开头的标签就触发；`workflow_dispatch` 让你能在网页上手动点，配 CI 时靠它反复试，不用真发版。
+
+`permissions` 是最容易漏的一段。`contents: read` 给 checkout 用，**`id-token: write` 才能申请 OIDC 令牌**——没有这行，trusted publishing 直接失效。
+
+`setup-node` 里的 `registry-url` 会顺手写一份 `.npmrc`，指到官方源。
+
+`npm ci` 严格按 lock 装依赖，`npm test` 不过就停在这里，**坏代码到不了发布那步**。
+
+`--provenance` 让 npm 生成溯源声明：这个包是从哪个仓库哪个提交构建的，签名后推到 sigstore 公开日志。
+
+### 11.3 以后怎么发版
+
+```bash
+npm version patch --no-git-tag-version
+git commit -am "release: v0.1.2"
+git push
+git tag -a v0.1.2 -m "v0.1.2"
+git push origin v0.1.2      # ← 这一下触发流水线
+```
+
+不用登录 npm，不用输验证码。
+
+### 11.4 这一路踩的坑
+
+**工作流文件名必须和 npm 上填的一字不差。** 我们在 npm 那边填的是 `发布.yml`，仓库里的文件叫 `publish.yml`，OIDC 比对失败，publish 报 404（npm 对没权限的包故意返 404 而不是 403，容易误判成"包不存在"）。
+
+**lock 里的下载地址不能是镜像。** 本地用 npmmirror 装包，`package-lock.json` 会把 `resolved` 写成 `registry.npmmirror.com`。GitHub runner 在境外，`npm ci` 直接报 `EALLOWREMOTE` 拒绝安装。解决办法是在仓库里加一个 `.npmrc` 写死官方源，再删掉 lock 重新生成。
+
+**npm CLI 版本要够新。** 老版本不认识 trusted publishing，会把发布会当成匿名请求。所以我们加了一步 `npm install -g npm@latest`。
+
+**同名 tag 重推不会再次触发。** GitHub 只认"新出现的 tag 引用"，触发过就删掉重推是无效的。想重跑用 `workflow_dispatch`。
+
+**流水线成功不等于上架成功。** 权限里如果同时勾了「阶段发布」，包会先进暂存区，要人工审核才转正。日志全绿、但 `npm view` 查不到版本，多半是这个原因。
+
+### 11.5 发完一定要核对
+
+```bash
+npm view @hiseven/demo versions --registry=https://registry.npmjs.org/
+```
+
+不要只看流水线是不是绿色。`conclusion: success` 只说明命令没报错，版本到底上没上架，得问注册表。
+
+---
+
+## 12. 后续待办
+
+1. `git stash` 临时收起改动去干别的。
+2. `git revert` 撤销已推送的提交。
+3. 加 `.gitattributes` 统一换行符，消掉那个 `LF will be replaced by CRLF` 的警告。
+4. 建 GitHub Release：`v0.1.0`、`v0.1.1`、`v0.1.2` 三条都还没有 Release 页面。
+5. 如果想让 PR 真的"不合规就合不了"，去开分支保护规则（Require approvals）。
 
 ---
 
@@ -812,3 +984,12 @@ scope 和 npm 账号不一致。`npm whoami` 看真实用户名，`@用户名/�
 
 **`git reset --hard` 把改动弄没了**
 `--hard` 连工作区一起重置，未提交的改动直接没。不确定时先用 `git stash`，或者只用 `--soft`/`--mixed`。
+
+**CI 里报 `EALLOWREMOTE`**
+`package-lock.json` 里的地址是镜像站。加 `../.npmrc` 写死官方源，删掉 lock 重新生成。
+
+**流水线绿了但 `npm view` 查不到新版本**
+trusted publishing 的权限勾了「阶段发布」，包进了暂存区等人工审核。改成只留 `npm publish`。
+
+**push 报 `! [rejected] ... (fetch first)`**
+远程有你没有的提交。先 `git pull` 合并，再 `git push`。这不是冲突，是拒绝。

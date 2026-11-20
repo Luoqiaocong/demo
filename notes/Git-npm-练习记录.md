@@ -893,11 +893,39 @@ npm view @hiseven/demo versions --registry=https://registry.npmjs.org/
 
 ## 附录 B：常用命令速记
 ```bash
-# 看状态与历史
-git status -sb
-git diff
-git diff --cached
-git log --graph --oneline --all --decorate
+# ── 看状态：文件现在站在哪个区域
+git status                      # 详细版，会提示你下一步能敲什么
+git status -s                   # 短格式，一个文件一行，两列标号
+git status -sb                  # 再加一行当前分支，日常最常用
+git status -sb --untracked-files=all   # 连未跟踪目录里的每个文件都列出来
+
+# 两列标号怎么读：左列管暂存区，右列管工作区
+#   M  文件   改过但没 add（还在工作区）
+#  M 文件    已 add，等提交
+#   MM 文件   add 之后又改了，两边都有内容
+#   A  文件   新文件已 add
+#   ?? 文件   未跟踪
+#   UU 文件   冲突未解决
+
+# ── 看差异：先想清楚"比的是哪两份"
+git diff                        # 工作区 vs 暂存区（add 之后就空了）
+git diff --cached               # 暂存区 vs 最近提交（提交前审这个）
+git diff HEAD                   # 工作区 vs 最近提交（一次看全部未提交）
+git diff HEAD~1 HEAD            # 上一个提交 vs 当前提交（刚提交的那次改了什么）
+git diff -- README.md           # 只看某个文件（-- 后面一律当路径）
+git diff --cached -- README.md  # 只看某文件、而且看的是暂存区
+git diff --stat                 # 只给"文件 + 增删行数"，扫一眼有没有夹带
+git diff --stat main 某分支      # 两条分支之间的差异统计
+git diff --name-only            # 只列文件名，不看内容
+
+# ── 看历史
+git log --oneline -5            # 最近 5 条，一行一条
+git log --oneline --decorate    # 带上分支、标签、HEAD 的指向
+git log --graph --oneline --all --decorate   # 分支分叉与合并的全貌
+git log --stat -1               # 最近 1 条 + 涉及哪些文件
+git log --oneline -10 -- 文件    # 某个文件自己的改动历史
+git show HEAD                   # 最近一次提交的完整内容（含补丁）
+git show --stat HEAD            # 只要这次提交的文件统计
 
 # 提交
 git add <具体文件>
